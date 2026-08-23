@@ -6,6 +6,14 @@ namespace App\Providers;
 
 use App\Events\CertificationCoachAttached;
 use App\Events\CertificationCoachDetached;
+use App\Events\ChatMessagePosted;
+use App\Events\MeetingCanceled;
+use App\Events\MeetingReserved;
+use App\Events\QaReplyPosted;
+use App\Listeners\SendChatMessageNotification;
+use App\Listeners\SendMeetingCanceledNotification;
+use App\Listeners\SendMeetingReservedNotification;
+use App\Listeners\SendQaReplyNotification;
 use App\Listeners\SyncChatMembersOnCoachAssignmentChanged;
 use App\Listeners\UpdateLastLoginAt;
 use Illuminate\Auth\Events\Login;
@@ -33,6 +41,18 @@ class EventServiceProvider extends ServiceProvider
         ],
         CertificationCoachDetached::class => [
             SyncChatMembersOnCoachAssignmentChanged::class,
+        ],
+        QaReplyPosted::class => [
+            SendQaReplyNotification::class,
+        ],
+        ChatMessagePosted::class => [
+            SendChatMessageNotification::class,
+        ],
+        MeetingReserved::class => [
+            SendMeetingReservedNotification::class,
+        ],
+        MeetingCanceled::class => [
+            SendMeetingCanceledNotification::class,
         ],
     ];
 

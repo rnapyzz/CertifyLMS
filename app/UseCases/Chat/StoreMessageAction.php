@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\UseCases\Chat;
 
+use App\Events\ChatMessagePosted;
 use App\Events\ChatMessageSent;
 use App\Models\ChatMember;
 use App\Models\ChatMessage;
@@ -18,6 +19,8 @@ use Illuminate\Support\Facades\DB;
  * - 送信者自身の `ChatMember.last_read_at = now()` を UPDATE(自分のメッセージは未読としてカウントしない)
  * - 通信失敗が DB 整合性に波及しないよう Pusher Broadcast は `DB::afterCommit()` で送る
  * - 担当コーチ未割当の判定は Controller 側で実施済(`CertificationCoachNotAssignedForChatException` 振り分け)
+ * - `ChatMessagePosted` を同じく afterCommit で発火し、送信者以外の参加者へ通知(アプリ内 + メール)する
+ *   (`App\Listeners\SendChatMessageNotification`)
  */
 final class StoreMessageAction
 {
@@ -40,6 +43,7 @@ final class StoreMessageAction
 
             DB::afterCommit(function () use ($message): void {
                 broadcast(new ChatMessageSent($message->load('sender')))->toOthers();
+                event(new ChatMessagePosted($message));
             });
 
             return $message;
