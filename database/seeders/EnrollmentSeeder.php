@@ -13,6 +13,7 @@ use App\Models\Certificate;
 use App\Models\Certification;
 use App\Models\Enrollment;
 use App\Models\EnrollmentGoal;
+use App\Models\EnrollmentNote;
 use App\Models\EnrollmentStatusLog;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
@@ -157,6 +158,8 @@ final class EnrollmentSeeder extends Seeder
             if ($index === 0) {
                 $this->seedFixedStudentGoals($enrollment);
             }
+
+            $this->seedCoachNotes($enrollment, $admin, includeAdminNote: true);
         }
     }
 
@@ -239,6 +242,9 @@ final class EnrollmentSeeder extends Seeder
             if ($pattern['state'] === 'learning' && $i % 2 === 0) {
                 $this->seedDemoStudentGoals($enrollment);
             }
+
+            // 担当コーチが割り当てられている資格の受講登録にはコーチメモを 1-2 件散らす(coach 動線の実機確認用)。
+            $this->seedCoachNotes($enrollment, $admin);
         }
     }
 
@@ -246,6 +252,36 @@ final class EnrollmentSeeder extends Seeder
     {
         EnrollmentGoal::factory()->for($enrollment)->create();
         EnrollmentGoal::factory()->achieved()->for($enrollment)->create();
+    }
+
+    /**
+     * 受講登録の資格に現在割り当てられている担当コーチ全員(TOEIC のように複数コーチが割り当たる資格では
+     * 複数件)からメモを 1 件ずつ残し、必要なら管理者メモも 1 件添える。担当外コーチはメモを残さないため、
+     * 「担当していない資格の受講登録に対するコーチのメモ操作は拒否」というシナリオも自然に成立する。
+     */
+    private function seedCoachNotes(Enrollment $enrollment, ?User $admin, bool $includeAdminNote = false): void
+    {
+        if ($enrollment->notes()->exists()) {
+            return;
+        }
+
+        $enrollment->loadMissing('certification.coaches');
+        $coaches = $enrollment->certification?->coaches ?? collect();
+
+        foreach ($coaches as $i => $coach) {
+            $createdAt = now()->subDays(4 - $i)->subHours($i * 3);
+            $note = EnrollmentNote::factory()->for($enrollment)->create(['author_id' => $coach->id]);
+            $note->forceFill(['created_at' => $createdAt, 'updated_at' => $createdAt])->save();
+        }
+
+        if ($includeAdminNote && $admin !== null) {
+            $createdAt = now()->subDays(1);
+            $note = EnrollmentNote::factory()->for($enrollment)->create([
+                'author_id' => $admin->id,
+                'body' => '運営観察: 学習ペース・面談状況ともに問題なし。定期フォローを継続。',
+            ]);
+            $note->forceFill(['created_at' => $createdAt, 'updated_at' => $createdAt])->save();
+        }
     }
 
     private function seedStatusLogs(Enrollment $enrollment, string $finalState, User $student): void

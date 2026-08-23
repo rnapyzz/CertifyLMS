@@ -162,6 +162,17 @@ class Enrollment extends Model
             ->orderByDesc('created_at');
     }
 
+    /**
+     * コーチメモ。並び順は指定しない(`enrollment-note._list` が表示時に自前で
+     * `orderByDesc('created_at')` を適用する)。
+     *
+     * @return HasMany<EnrollmentNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(EnrollmentNote::class);
+    }
+
     public function scopeLearning(Builder $query): Builder
     {
         return $query->where('status', EnrollmentStatus::Learning->value);
