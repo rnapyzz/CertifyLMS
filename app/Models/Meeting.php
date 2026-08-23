@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
@@ -98,6 +99,14 @@ class Meeting extends Model
     public function quotaTransaction(): BelongsTo
     {
         return $this->belongsTo(MeetingQuotaTransaction::class, 'meeting_quota_transaction_id');
+    }
+
+    /**
+     * @return HasMany<MeetingReminder, $this>
+     */
+    public function reminders(): HasMany
+    {
+        return $this->hasMany(MeetingReminder::class);
     }
 
     /**

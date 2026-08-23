@@ -14,5 +14,6 @@ enum NotificationType: string
     case QaReplyReceived = 'qa_reply_received';
     case MeetingReserved = 'meeting_reserved';
     case MeetingCanceled = 'meeting_canceled';
+    case MeetingReminder = 'meeting_reminder';
     case AdminAnnouncement = 'admin_announcement';
 }
