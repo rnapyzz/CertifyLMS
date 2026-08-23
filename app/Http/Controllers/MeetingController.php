@@ -6,6 +6,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\EnrollmentStatus;
 use App\Enums\MeetingStatus;
+use App\Events\MeetingCanceled;
+use App\Events\MeetingReserved;
 use App\Exceptions\MeetingQuota\InsufficientMeetingQuotaException;
 use App\Exceptions\Mentoring\MeetingAlreadyStartedException;
 use App\Exceptions\Mentoring\MeetingNoAvailableCoachException;
@@ -216,6 +218,8 @@ class MeetingController extends Controller
             return $meeting->fresh();
         });
 
+        event(new MeetingReserved($meeting));
+
         return redirect()
             ->route('meetings.show', $meeting)
             ->with('success', '面談を予約しました。');
@@ -249,6 +253,8 @@ class MeetingController extends Controller
                 'canceled_at' => now(),
             ]);
         });
+
+        event(new MeetingCanceled($meeting->fresh()));
 
         return redirect()
             ->route('meetings.show', $meeting)
