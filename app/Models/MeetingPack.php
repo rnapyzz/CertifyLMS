@@ -78,4 +78,20 @@ class MeetingPack extends Model
     {
         return $query->orderBy('sort_order')->orderByDesc('created_at');
     }
+
+    /**
+     * SKU 名の部分一致検索。
+     *
+     * @param Builder<MeetingPack> $query
+     *
+     * @return Builder<MeetingPack>
+     */
+    public function scopeKeyword(Builder $query, ?string $keyword): Builder
+    {
+        if ($keyword === null || $keyword === '') {
+            return $query;
+        }
+
+        return $query->where('name', 'LIKE', '%'.$keyword.'%');
+    }
 }
