@@ -92,4 +92,20 @@ class Plan extends Model
     {
         return $query->orderBy('sort_order')->orderByDesc('created_at');
     }
+
+    /**
+     * プラン名の部分一致検索。
+     *
+     * @param Builder<Plan> $query
+     *
+     * @return Builder<Plan>
+     */
+    public function scopeKeyword(Builder $query, ?string $keyword): Builder
+    {
+        if ($keyword === null || $keyword === '') {
+            return $query;
+        }
+
+        return $query->where('name', 'LIKE', '%'.$keyword.'%');
+    }
 }
