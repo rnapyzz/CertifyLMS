@@ -25,6 +25,8 @@ use App\Http\Controllers\MockExamQuestionController;
 use App\Http\Controllers\MockExamSessionController;
 use App\Http\Controllers\MockExamSessionMonitorController;
 use App\Http\Controllers\PartController;
+use App\Http\Controllers\QaBoardController;
+use App\Http\Controllers\QaReplyController;
 use App\Http\Controllers\QuestionCategoryController;
 use App\Http\Controllers\QuizHistoryController;
 use App\Http\Controllers\QuizStatsController;
@@ -414,6 +416,61 @@ Route::middleware(['auth', 'role:student,coach', 'active-learning'])->group(func
         ->name('chat.show');
     Route::post('chat-rooms/{room}/messages', [ChatRoomController::class, 'storeMessage'])
         ->name('chat.storeMessage');
+});
+
+// ============================================================
+// 受講生専用ルート — qa-board 質問掲示板（新規投稿 / 投稿の編集と削除 / ステータス変更）
+//
+// 'qa-board/create' は下の共有ルート group にある 'qa-board/{thread}' より
+// 先に登録する必要がある(そうしないと {thread} に "create" が束縛されてしまう)。
+// ============================================================
+Route::middleware(['auth', 'role:student', 'active-learning'])->group(function () {
+    Route::get('qa-board/create', [QaBoardController::class, 'create'])
+        ->name('qa-board.create');
+    Route::post('qa-board', [QaBoardController::class, 'store'])
+        ->name('qa-board.store');
+    Route::get('qa-board/{thread}/edit', [QaBoardController::class, 'edit'])
+        ->name('qa-board.edit');
+    Route::patch('qa-board/{thread}', [QaBoardController::class, 'update'])
+        ->name('qa-board.update');
+    Route::delete('qa-board/{thread}', [QaBoardController::class, 'destroy'])
+        ->name('qa-board.destroy');
+    Route::post('qa-board/{thread}/resolve', [QaBoardController::class, 'resolve'])
+        ->name('qa-board.resolve');
+    Route::post('qa-board/{thread}/unresolve', [QaBoardController::class, 'unresolve'])
+        ->name('qa-board.unresolve');
+});
+
+// ============================================================
+// 受講生・コーチ共有 — qa-board 質問掲示板(閲覧 / 回答の投稿・編集・削除)
+// ============================================================
+Route::middleware(['auth', 'role:student,coach', 'active-learning'])->group(function () {
+    Route::get('qa-board', [QaBoardController::class, 'index'])
+        ->name('qa-board.index');
+    Route::get('qa-board/{thread}', [QaBoardController::class, 'show'])
+        ->name('qa-board.show');
+    Route::post('qa-board/{thread}/replies', [QaReplyController::class, 'store'])
+        ->name('qa-board.replies.store');
+    Route::get('qa-board/{thread}/replies/{reply}/edit', [QaReplyController::class, 'edit'])
+        ->name('qa-board.replies.edit');
+    Route::patch('qa-board/{thread}/replies/{reply}', [QaReplyController::class, 'update'])
+        ->name('qa-board.replies.update');
+    Route::delete('qa-board/{thread}/replies/{reply}', [QaReplyController::class, 'destroy'])
+        ->name('qa-board.replies.destroy');
+});
+
+// ============================================================
+// 管理者専用 — qa-board 質問掲示板モデレーション(横断閲覧 + 削除のみ。内容編集 / 解決マーク代行は不可)
+// ============================================================
+Route::middleware(['auth', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('qa-board', [QaBoardController::class, 'index'])
+        ->name('admin.qa-board.index');
+    Route::get('qa-board/{thread}', [QaBoardController::class, 'show'])
+        ->name('admin.qa-board.show');
+    Route::delete('qa-board/{thread}', [QaBoardController::class, 'destroy'])
+        ->name('admin.qa-board.destroy');
+    Route::delete('qa-board/{thread}/replies/{reply}', [QaReplyController::class, 'destroy'])
+        ->name('admin.qa-board.replies.destroy');
 });
 
 // ============================================================

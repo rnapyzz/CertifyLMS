@@ -6,7 +6,6 @@ namespace App\UseCases\Dashboard;
 
 use App\Enums\EnrollmentStatus;
 use App\Enums\MeetingStatus;
-use App\Enums\QaThreadStatus;
 use App\Http\Controllers\DashboardController;
 use App\Models\ChatRoom;
 use App\Models\Enrollment;
@@ -100,7 +99,7 @@ final class FetchCoachDashboardAction
 
         return QaThread::query()
             ->whereIn('certification_id', $certificationIds)
-            ->where('status', QaThreadStatus::Open)
+            ->unresolved()
             ->whereDoesntHave('replies')
             ->count();
     }
@@ -121,7 +120,7 @@ final class FetchCoachDashboardAction
 
         return QaThread::query()
             ->whereIn('certification_id', $certificationIds)
-            ->where('status', QaThreadStatus::Open)
+            ->unresolved()
             ->whereDoesntHave('replies')
             ->with(['user', 'certification'])
             ->latest()
