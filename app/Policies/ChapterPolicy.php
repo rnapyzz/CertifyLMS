@@ -22,20 +22,16 @@ class ChapterPolicy
 {
     public function viewAny(User $auth, Part $part): bool
     {
-        return match ($auth->role) {
-            UserRole::Admin => true,
-            UserRole::Coach => false,
-            default => false,
-        };
+        return $this->canManage($auth, $part->certification);
     }
 
     public function view(User $auth, Chapter $chapter): bool
     {
-        return match ($auth->role) {
-            UserRole::Admin => true,
-            UserRole::Coach => false,
-            default => $chapter->status === ContentStatus::Published,
-        };
+        if ($auth->role === UserRole::Student) {
+            return $chapter->status === ContentStatus::Published;
+        }
+
+        return $this->canManage($auth, $chapter->part->certification);
     }
 
     public function create(User $auth, Part $part): bool
@@ -72,7 +68,7 @@ class ChapterPolicy
     {
         return match ($auth->role) {
             UserRole::Admin => true,
-            UserRole::Coach => false,
+            UserRole::Coach => $this->assignedCoach($auth, $certification),
             default => false,
         };
     }

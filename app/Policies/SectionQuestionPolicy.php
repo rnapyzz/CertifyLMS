@@ -30,12 +30,8 @@ class SectionQuestionPolicy
     {
         $certification = $question->section->chapter->part->certification;
 
-        if ($auth->role === UserRole::Admin) {
-            return true;
-        }
-
-        if ($auth->role === UserRole::Coach) {
-            return false;
+        if ($auth->role !== UserRole::Student) {
+            return $this->canManage($auth, $certification);
         }
 
         if ($question->status !== ContentStatus::Published) {
@@ -76,7 +72,7 @@ class SectionQuestionPolicy
     {
         return match ($auth->role) {
             UserRole::Admin => true,
-            UserRole::Coach => false,
+            UserRole::Coach => $this->assignedCoach($auth, $certification),
             default => false,
         };
     }
