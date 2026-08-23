@@ -10,7 +10,9 @@ use App\Models\Certification;
 use App\Models\CoachAvailability;
 use App\Models\Enrollment;
 use App\Models\Meeting;
+use App\Models\MeetingQuotaTransaction;
 use App\Models\User;
+use App\Services\MeetingQuotaService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -315,5 +317,26 @@ class MeetingControllerTest extends TestCase
             'type' => MeetingQuotaTransactionType::Refunded->value,
             'amount' => 1,
         ]);
+    }
+
+    public function test_cancel_restores_students_remaining_quota_count(): void
+    {
+        // Arrange: 初期付与 5 回のうち 1 回を消費済(予約成立時に実際に起こる状態)にしておく。
+        $student = User::factory()->student()->inProgress()->create(['max_meetings' => 5]);
+        $coach = User::factory()->coach()->create();
+        $meeting = Meeting::factory()->reserved()->forCoach($coach)->forStudent($student)->create([
+            'scheduled_at' => now()->addDays(3)->startOfHour(),
+        ]);
+        MeetingQuotaTransaction::factory()->consumed($meeting->id)->create(['user_id' => $student->id]);
+
+        $quotaService = app(MeetingQuotaService::class);
+        $this->assertSame(4, $quotaService->remaining($student), '前提: 消費済で残数 4');
+
+        // Act
+        $response = $this->actingAs($student)->post(route('meetings.cancel', $meeting));
+
+        // Assert: 返却トランザクションにより残数が消費前の 5 に戻る
+        $response->assertRedirect();
+        $this->assertSame(5, $quotaService->remaining($student->fresh()));
     }
 }
