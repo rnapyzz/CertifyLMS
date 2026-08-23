@@ -12,6 +12,7 @@ use App\Enums\UserStatus;
 use App\Models\Certificate;
 use App\Models\Certification;
 use App\Models\Enrollment;
+use App\Models\EnrollmentGoal;
 use App\Models\EnrollmentStatusLog;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
@@ -152,7 +153,35 @@ final class EnrollmentSeeder extends Seeder
                     'changed_reason' => '新規登録',
                 ],
             );
+
+            if ($index === 0) {
+                $this->seedFixedStudentGoals($enrollment);
+            }
         }
+    }
+
+    /**
+     * 固定 student の 1 件目の受講登録に、達成済 / 未達成を混在させた個人目標を投入する。
+     * 目標 CRUD・達成マーク / 解除・編集 / 削除の UI を実機確認するための起点。
+     */
+    private function seedFixedStudentGoals(Enrollment $enrollment): void
+    {
+        if ($enrollment->goals()->exists()) {
+            return;
+        }
+
+        EnrollmentGoal::factory()->for($enrollment)->create([
+            'title' => '過去問 5 年分を解き終える',
+            'description' => "本試験の出題傾向を掴むため、直近 5 年分の過去問を解き切る。\n間違えた問題は解説を読んでノートにまとめる。",
+            'target_date' => now()->addMonth()->toDateString(),
+        ]);
+
+        EnrollmentGoal::factory()->achieved()->for($enrollment)->create([
+            'title' => '教材の基礎パートを読み終える',
+            'description' => '入門〜基礎パートを一周し、全体像を掴む。',
+            'target_date' => now()->subWeek()->toDateString(),
+            'achieved_at' => now()->subDays(2),
+        ]);
     }
 
     /**
@@ -205,7 +234,18 @@ final class EnrollmentSeeder extends Seeder
             if ($pattern['state'] === 'passed') {
                 $this->issueCertificate($enrollment, $passedAt);
             }
+
+            // demo 受講生の半数程度に目標を散らす(コーチ / 管理者 / 他受講生からの閲覧認可分岐を確認するため)。
+            if ($pattern['state'] === 'learning' && $i % 2 === 0) {
+                $this->seedDemoStudentGoals($enrollment);
+            }
         }
+    }
+
+    private function seedDemoStudentGoals(Enrollment $enrollment): void
+    {
+        EnrollmentGoal::factory()->for($enrollment)->create();
+        EnrollmentGoal::factory()->achieved()->for($enrollment)->create();
     }
 
     private function seedStatusLogs(Enrollment $enrollment, string $finalState, User $student): void
