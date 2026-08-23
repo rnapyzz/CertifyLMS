@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\UseCases\Learning;
 
+use App\Enums\CertificationStatus;
 use App\Enums\ContentStatus;
 use App\Models\Section;
 use App\Models\SectionProgress;
@@ -15,8 +16,9 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 /**
  * /learning/sections/{section} (5 階層目、Section 詳細) のデータを準備する Action。
  *
- * cascade visibility (Section / Chapter / Part のいずれかが Draft or SoftDelete 済) を 404 で弾き、
- * Markdown 本文を MarkdownRenderingService::toHtml で HTML 化し、読了状態と前後 Section を併せて返す。
+ * cascade visibility (Section / Chapter / Part のいずれかが Draft or SoftDelete 済、または親
+ * Certification が Published でない) を 404 で弾き、Markdown 本文を MarkdownRenderingService::toHtml
+ * で HTML 化し、読了状態と前後 Section を併せて返す。
  */
 final class ShowSectionAction
 {
@@ -33,10 +35,12 @@ final class ShowSectionAction
         $section->loadMissing('chapter.part.certification');
         $chapter = $section->chapter;
         $part = $chapter?->part;
+        $certification = $part?->certification;
 
         if ($section->status !== ContentStatus::Published
             || $chapter === null || $chapter->status !== ContentStatus::Published
-            || $part === null || $part->status !== ContentStatus::Published) {
+            || $part === null || $part->status !== ContentStatus::Published
+            || $certification === null || $certification->status !== CertificationStatus::Published) {
             throw new NotFoundHttpException;
         }
 
