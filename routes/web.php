@@ -43,6 +43,9 @@ use App\Http\Controllers\SectionQuestionController;
 use App\Http\Controllers\SectionQuizController;
 use App\Http\Controllers\SectionQuizResultController;
 use App\Http\Controllers\Settings\AvailabilityController as SettingsAvailabilityController;
+use App\Http\Controllers\Settings\AvatarController as SettingsAvatarController;
+use App\Http\Controllers\Settings\PasswordController as SettingsPasswordController;
+use App\Http\Controllers\Settings\ProfileController as SettingsProfileController;
 use App\Http\Controllers\Settings\SettingsDefaultEnrollmentController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeakDrillController;
@@ -85,6 +88,13 @@ Route::middleware('auth')->group(function () {
     Route::get('notifications/{notification}', [NotificationController::class, 'show'])->name('notifications.show');
     Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead'])->name('notifications.markAllAsRead');
     Route::post('notifications/{notification}/read', [NotificationController::class, 'markAsRead'])->name('notifications.markAsRead');
+
+    // 設定・プロフィール(3 ロール共通、常に本人自身が対象。ロール制約なし、修了済受講生も利用可)
+    Route::get('settings/profile', [SettingsProfileController::class, 'edit'])->name('settings.profile.edit');
+    Route::patch('settings/profile', [SettingsProfileController::class, 'update'])->name('settings.profile.update');
+    Route::post('settings/avatar', [SettingsAvatarController::class, 'store'])->name('settings.avatar.store');
+    Route::delete('settings/avatar', [SettingsAvatarController::class, 'destroy'])->name('settings.avatar.destroy');
+    Route::put('settings/password', [SettingsPasswordController::class, 'update'])->name('settings.password.update');
 });
 
 // ============================================================
