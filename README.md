@@ -150,4 +150,19 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 
 - `GEMINI_API_KEY` / `GEMINI_MODEL` — AI 相談が Gemini API(Generative Language API)に問い合わせる際に使用します。[Google AI Studio](https://aistudio.google.com/apikey) で API キーを発行し、`GEMINI_API_KEY` に設定してください(Google アカウントでログイン → 「Get API key」→「Create API key」)。未設定でも `AI_CHAT_ENABLED=true` であれば画面・ルートは動作しますが、AI 応答は常にエラー(「AI が応答できませんでした」)としてグレースフルに失敗します。無料枠の範囲でも動作確認は可能です。
 
+- `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` — 追加面談パックの購入(Stripe Checkout)に使用します。
+
+  1. [Stripe ダッシュボード](https://dashboard.stripe.com/register)にアカウント登録(テストモードのみでよく、本人確認や銀行口座登録は不要です)。
+  2. ダッシュボード右上が「テスト環境」になっていることを確認し、「開発者」→「API キー」から **シークレットキー**(`sk_test_...`)をコピーして `STRIPE_SECRET_KEY` に設定します。
+  3. ローカルで Webhook 通知を受け取るには [Stripe CLI](https://docs.stripe.com/stripe-cli) が必要です。`brew install stripe/stripe-cli/stripe`(または[配布ページ](https://github.com/stripe/stripe-cli/releases/latest)からダウンロード)でインストール後、`stripe login` でアカウント連携します。
+  4. 以下のコマンドを起動したままにすると、Stripe が送る Webhook イベントがローカルの `/webhooks/stripe` へ転送されます。
+
+     ```bash
+     stripe listen --forward-to localhost:8000/webhooks/stripe
+     ```
+
+     起動時に表示される `Your webhook signing secret is whsec_...` の値を `STRIPE_WEBHOOK_SECRET` に設定してください(`stripe listen` を起動し直すたびに値が変わるため、都度更新が必要です)。
+  5. `sail artisan config:clear` の後、`/meeting-quota/checkout` から購入を試すと Stripe のホストする決済ページへ遷移します。テスト用カード番号 `4242 4242 4242 4242`(有効期限は未来の任意の月、CVC は任意の 3 桁)で決済を完了すると、`stripe listen` のログにイベント転送が表示され、数秒後に残面談回数へ反映されます。
+  6. `STRIPE_SECRET_KEY` が未設定でも `/meeting-quota/checkout` 自体は表示されますが、購入ボタン押下時にエラーメッセージを表示してグレースフルに失敗します(実際の決済処理は行われません)。
+
 新しい環境変数やセットアップ手順を追加した場合は、`.env.example` と本 README に追記し、チームの誰でも環境を再現できる状態を保ってください。
