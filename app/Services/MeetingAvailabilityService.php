@@ -16,15 +16,22 @@ use Illuminate\Support\Collection;
  * 担当コーチ集合の面談可能時間枠を 60 分単位で展開し、空きスロットを集計する Service。
  *
  * 受講生の予約画面が「該当資格の担当コーチ全員の有効枠 Union」を 1 日単位で取得し、
- * 既存予約済時刻 を除外して各スロットの「予約可能なコーチ数」を返す。受講生にコーチ個別は提示せず、
- * 予約確定時にコーチを自動割当する。
+ * 既存予約済時刻 と Google カレンダー連携済コーチの予定(S-A-01)を除外して各スロットの
+ * 「予約可能なコーチ数」を返す。受講生にコーチ個別は提示せず、予約確定時にコーチを自動割当する。
+ * 未連携コーチは従来通り LMS 内の予約のみで空き判定される。
  */
 final class MeetingAvailabilityService
 {
+    public function __construct(
+        private readonly GoogleCalendarService $googleCalendar,
+    ) {}
+
     /**
      * 指定 Certification の担当コーチ集合について、指定日 1 日分の 60 分単位空きスロットを返す。
      *
-     * 1 リクエストあたり availability 1 クエリ + meetings 1 クエリ で完結させる。
+     * 1 リクエストあたり availability 1 クエリ + meetings 1 クエリ + 連携済コーチ数分の Google
+     * freebusy 呼出し で完結させる。Google 呼出しが失敗しても `GoogleCalendarService::busyIntervals`
+     * が空配列を返す(フォールバック)ため、本メソッド自体が失敗することはない。
      *
      * @return Collection<int, array{slot_start: Carbon, slot_end: Carbon, available_coach_count: int}>
      */
@@ -58,6 +65,10 @@ final class MeetingAvailabilityService
             ->groupBy('coach_id')
             ->map(fn ($rows) => $rows->map(fn (Meeting $m) => $m->scheduled_at->format('H:i'))->all());
 
+        // Google カレンダー連携済コーチの当日の予定時間帯を (coach_id => [{start, end}, ...]) で索引化
+        $googleBusyByCoach = $coaches
+            ->mapWithKeys(fn ($coach) => [$coach->id => $this->googleCalendar->busyIntervals($coach, $dayStart, $dayEnd)]);
+
         /** @var array<string, int> $slotCounts スロット開始時刻(H:i) → available coach 数 */
         $slotCounts = [];
 
@@ -69,8 +80,12 @@ final class MeetingAvailabilityService
                 $slotKey = $slot->format('H:i');
                 $coachId = $availability->coach_id;
                 $booked = $bookedByCoach[$coachId] ?? [];
+                $googleBusy = $googleBusyByCoach[$coachId] ?? [];
 
-                if (! in_array($slotKey, $booked, true)) {
+                $isBooked = in_array($slotKey, $booked, true);
+                $isGoogleBusy = $this->overlapsAnyInterval($slot, $slot->copy()->addHour(), $googleBusy);
+
+                if (! $isBooked && ! $isGoogleBusy) {
                     $slotCounts[$slotKey] = ($slotCounts[$slotKey] ?? 0) + 1;
                 }
 
@@ -108,5 +123,19 @@ final class MeetingAvailabilityService
         if (! $matched) {
             throw new MeetingOutOfAvailabilityException;
         }
+    }
+
+    /**
+     * @param list<array{start: Carbon, end: Carbon}> $intervals
+     */
+    private function overlapsAnyInterval(Carbon $start, Carbon $end, array $intervals): bool
+    {
+        foreach ($intervals as $interval) {
+            if ($start->lessThan($interval['end']) && $end->greaterThan($interval['start'])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

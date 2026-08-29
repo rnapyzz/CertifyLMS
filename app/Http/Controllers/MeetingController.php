@@ -23,6 +23,7 @@ use App\Models\Meeting;
 use App\Models\MeetingMemo;
 use App\Models\User;
 use App\Services\CoachMeetingLoadService;
+use App\Services\GoogleCalendarService;
 use App\Services\MeetingAvailabilityService;
 use App\Services\MeetingQuotaService;
 use App\UseCases\MeetingQuota\ConsumeQuotaAction;
@@ -169,6 +170,7 @@ class MeetingController extends Controller
         CoachMeetingLoadService $coachLoadService,
         MeetingQuotaService $quotaService,
         ConsumeQuotaAction $consumeAction,
+        GoogleCalendarService $googleCalendar,
     ): RedirectResponse {
         $scheduledAt = Carbon::parse($request->validated('scheduled_at'));
         $topic = $request->validated('topic');
@@ -183,6 +185,7 @@ class MeetingController extends Controller
             $coachLoadService,
             $quotaService,
             $consumeAction,
+            $googleCalendar,
         ) {
             if ($quotaService->remaining($student) < 1) {
                 throw new InsufficientMeetingQuotaException;
@@ -190,7 +193,7 @@ class MeetingController extends Controller
 
             $availabilityService->validateSlot($enrollment->certification, $scheduledAt);
 
-            $candidates = $this->findAvailableCoaches($enrollment->certification, $scheduledAt);
+            $candidates = $this->findAvailableCoaches($enrollment->certification, $scheduledAt, $googleCalendar);
             if ($candidates->isEmpty()) {
                 throw new MeetingNoAvailableCoachException;
             }
@@ -308,16 +311,22 @@ class MeetingController extends Controller
     }
 
     /**
-     * 担当コーチ集合のうち、(1) 当該時刻に有効な availability 枠があり、
-     * (2) 当該時刻に reserved / completed の Meeting を持たないコーチ集合を返す。
+     * 担当コーチ集合のうち、(1) 当該時刻に有効な availability 枠があり、(2) 当該時刻に reserved /
+     * completed の Meeting を持たず、(3) Google カレンダー連携済であれば当該時刻に Google 側の
+     * 予定も持たない、コーチ集合を返す(S-A-01)。Google との通信に失敗した場合は
+     * `GoogleCalendarService::busyIntervals` が空配列を返すため、その場合は従来通り LMS 内の
+     * 判定のみでフォールバックする。
      *
      * @return Collection<int, User>
      */
-    private function findAvailableCoaches(Certification $certification, Carbon $scheduledAt): Collection
-    {
+    private function findAvailableCoaches(
+        Certification $certification,
+        Carbon $scheduledAt,
+        GoogleCalendarService $googleCalendar,
+    ): Collection {
         $time = $scheduledAt->format('H:i:s');
 
-        return $certification->coaches()
+        $candidates = $certification->coaches()
             ->whereHas('coachAvailabilities', function ($q) use ($scheduledAt, $time) {
                 $q->where('day_of_week', $scheduledAt->dayOfWeek)
                     ->where('is_active', true)
@@ -329,5 +338,19 @@ class MeetingController extends Controller
                     ->whereIn('status', [MeetingStatus::Reserved->value, MeetingStatus::Completed->value]);
             })
             ->get();
+
+        $slotEnd = $scheduledAt->copy()->addHour();
+
+        return $candidates->reject(function (User $coach) use ($googleCalendar, $scheduledAt, $slotEnd) {
+            $busy = $googleCalendar->busyIntervals($coach, $scheduledAt, $slotEnd);
+
+            foreach ($busy as $interval) {
+                if ($scheduledAt->lessThan($interval['end']) && $slotEnd->greaterThan($interval['start'])) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
     }
 }
