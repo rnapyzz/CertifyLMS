@@ -18,7 +18,7 @@ return [
     'enabled' => (bool) env('AI_CHAT_ENABLED', false),
 
     'gemini' => [
-        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+        'model' => env('GEMINI_MODEL', 'gemini-3.6-flash'),
         'timeout' => (int) env('GEMINI_TIMEOUT', 20),
     ],
 

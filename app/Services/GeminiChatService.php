@@ -40,7 +40,7 @@ class GeminiChatService
     public function ask(string $systemPrompt, array $history, string $userMessage): array
     {
         $apiKey = (string) config('services.gemini.api_key');
-        $model = (string) config('ai-chat.gemini.model', 'gemini-2.5-flash');
+        $model = (string) config('ai-chat.gemini.model', 'gemini-3.6-flash');
 
         if ($apiKey === '') {
             throw new GeminiChatException('GEMINI_API_KEY が設定されていません。');

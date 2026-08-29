@@ -38,7 +38,7 @@ class AiChatMessageFactory extends Factory
             'role' => AiChatMessageRole::Assistant,
             'status' => AiChatMessageStatus::Completed,
             'content' => fake()->realText(200),
-            'model' => 'gemini-2.5-flash',
+            'model' => 'gemini-3.6-flash',
             'input_tokens' => fake()->numberBetween(50, 300),
             'output_tokens' => fake()->numberBetween(50, 300),
             'response_time_ms' => fake()->numberBetween(400, 3000),
