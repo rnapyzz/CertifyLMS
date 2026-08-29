@@ -10,11 +10,13 @@ use App\Events\ChatMessagePosted;
 use App\Events\MeetingCanceled;
 use App\Events\MeetingReserved;
 use App\Events\QaReplyPosted;
+use App\Listeners\RemoveMeetingFromGoogleCalendar;
 use App\Listeners\SendChatMessageNotification;
 use App\Listeners\SendMeetingCanceledNotification;
 use App\Listeners\SendMeetingReservedNotification;
 use App\Listeners\SendQaReplyNotification;
 use App\Listeners\SyncChatMembersOnCoachAssignmentChanged;
+use App\Listeners\SyncMeetingToGoogleCalendar;
 use App\Listeners\UpdateLastLoginAt;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Registered;
@@ -50,9 +52,11 @@ class EventServiceProvider extends ServiceProvider
         ],
         MeetingReserved::class => [
             SendMeetingReservedNotification::class,
+            SyncMeetingToGoogleCalendar::class,
         ],
         MeetingCanceled::class => [
             SendMeetingCanceledNotification::class,
+            RemoveMeetingFromGoogleCalendar::class,
         ],
     ];
 
