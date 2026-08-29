@@ -146,4 +146,8 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 
   > **本番運用時の注意(セキュリティ)**: `google_credentials` テーブルの `access_token` / `refresh_token` は現状 **平文で保存**されます(本チケットのスコープ外)。本番運用では、Laravel の暗号化キャスト(`'access_token' => 'encrypted'` 等を `GoogleCredential::$casts` に追加)や、DB 列レベルの暗号化(カラム暗号化 / KMS 連携)の導入を別途検討してください。
 
+- `AI_CHAT_ENABLED` — AI 相談(Gemini チャットボット)機能のスイッチです。`false`(既定)の間は `/ai-chat` のルート自体が登録されず、フローティングウィジェット・フル画面とも一切表示・利用できません。
+
+- `GEMINI_API_KEY` / `GEMINI_MODEL` — AI 相談が Gemini API(Generative Language API)に問い合わせる際に使用します。[Google AI Studio](https://aistudio.google.com/apikey) で API キーを発行し、`GEMINI_API_KEY` に設定してください(Google アカウントでログイン → 「Get API key」→「Create API key」)。未設定でも `AI_CHAT_ENABLED=true` であれば画面・ルートは動作しますが、AI 応答は常にエラー(「AI が応答できませんでした」)としてグレースフルに失敗します。無料枠の範囲でも動作確認は可能です。
+
 新しい環境変数やセットアップ手順を追加した場合は、`.env.example` と本 README に追記し、チームの誰でも環境を再現できる状態を保ってください。
