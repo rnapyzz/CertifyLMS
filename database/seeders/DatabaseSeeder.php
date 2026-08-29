@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
             MockExamSeeder::class,
             ChatSeeder::class,
             QaBoardSeeder::class,
+            AiChatSeeder::class,
             CertificateSeeder::class,
             NotificationSeeder::class,
             AnnouncementSeeder::class,

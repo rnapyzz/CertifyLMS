@@ -28,6 +28,7 @@
         </report>
     </coverage>
     <php>
+        <env name="AI_CHAT_ENABLED" value="true"/>
         <env name="APP_ENV" value="testing"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_DRIVER" value="array"/>
