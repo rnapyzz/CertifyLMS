@@ -45,8 +45,17 @@ class MeetingPackController extends Controller
     {
         $this->authorize('view', $plan);
 
+        // 画面の「購入数」カードは $plan->payments->count() をそのまま使う(全件の正確な総数が必要)。
+        // 一覧テーブル側は本来「直近 20 件」表示を想定しているようだが(画面コメント参照)、
+        // 件数カードとテーブルが同じコレクションを参照する実装のため、正確な総数を優先し limit は付けない。
+        $plan->load([
+            'createdBy',
+            'updatedBy',
+            'payments' => fn ($q) => $q->with('user')->latest(),
+        ]);
+
         return view('meeting-pack.management.show', [
-            'plan' => $plan->load(['createdBy', 'updatedBy']),
+            'plan' => $plan,
         ]);
     }
 

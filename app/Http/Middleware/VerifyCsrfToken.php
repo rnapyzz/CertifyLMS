@@ -14,6 +14,8 @@ class VerifyCsrfToken extends Middleware
      * @var array<int, string>
      */
     protected $except = [
-        //
+        // Stripe サーバからの Webhook 通知。ブラウザセッションを持たないため CSRF トークンが無く、
+        // 正当性の担保は署名検証(StripeWebhookController)のみで行う。
+        'webhooks/stripe',
     ];
 }
