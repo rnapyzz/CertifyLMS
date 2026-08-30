@@ -7,6 +7,7 @@ use App\Http\Controllers\AiChatMessageController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\Auth\OnboardingController;
 use App\Http\Controllers\BrowseController;
+use App\Http\Controllers\CertificateDownloadController;
 use App\Http\Controllers\CertificationCatalogController;
 use App\Http\Controllers\CertificationCategoryController;
 use App\Http\Controllers\CertificationCoachAssignmentController;
@@ -480,6 +481,16 @@ Route::middleware(['auth', 'role:student', 'active-learning'])->group(function (
 Route::middleware('auth')->group(function () {
     Route::get('meetings/{meeting}', [MeetingController::class, 'show'])->name('meetings.show');
     Route::post('meetings/{meeting}/cancel', [MeetingController::class, 'cancel'])->name('meetings.cancel');
+});
+
+// ============================================================
+// 当事者共通ルート — 修了証 PDF ダウンロード(受講生本人 / 担当コーチ / 管理者、認可は Policy に委譲)
+//
+// active-learning を付けない: 修了証は退会前まで含め永続的にダウンロード可能なため。
+// ============================================================
+Route::middleware('auth')->group(function () {
+    Route::get('certificates/{certificate}/download', [CertificateDownloadController::class, 'download'])
+        ->name('certificates.download');
 });
 
 // ============================================================
