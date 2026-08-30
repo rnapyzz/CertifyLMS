@@ -6,11 +6,14 @@ namespace Tests\Unit\Services;
 
 use App\Exceptions\AiChat\GeminiChatException;
 use App\Services\GeminiChatService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
  * Gemini API (generateContent) との通信を検証する。実際の外部通信は行わず Http::fake で固定する。
+ *
+ * @group external-api
  */
 class GeminiChatServiceTest extends TestCase
 {
@@ -129,5 +132,77 @@ class GeminiChatServiceTest extends TestCase
         $service = new GeminiChatService;
 
         $this->assertSame('二分探索木の基礎', $service->generateTitle('質問', '回答'));
+    }
+
+    public function test_ask_throws_when_upstream_returns_200_with_empty_response_body(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => '']]]]],
+            ], 200),
+        ]);
+
+        $service = new GeminiChatService;
+
+        try {
+            $service->ask('system', [], 'question');
+            $this->fail('GeminiChatException was not thrown.');
+        } catch (GeminiChatException $e) {
+            $this->assertSame(200, $e->upstreamStatus());
+        }
+    }
+
+    public function test_ask_throws_when_upstream_response_has_no_candidates_at_all(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'promptFeedback' => ['blockReason' => 'SAFETY'],
+            ], 200),
+        ]);
+
+        $service = new GeminiChatService;
+
+        $this->expectException(GeminiChatException::class);
+
+        $service->ask('system', [], 'question');
+    }
+
+    public function test_ask_throws_gemini_chat_exception_on_network_connection_error(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => fn () => throw new ConnectionException('Connection refused.'),
+        ]);
+
+        $service = new GeminiChatService;
+
+        try {
+            $service->ask('system', [], 'question');
+            $this->fail('GeminiChatException was not thrown.');
+        } catch (GeminiChatException $e) {
+            $this->assertNull($e->upstreamStatus());
+        }
+    }
+
+    public function test_ask_succeeds_on_a_fresh_call_after_a_prior_call_failed(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::sequence()
+                ->push(['error' => 'server error'], 500)
+                ->push([
+                    'candidates' => [['content' => ['parts' => [['text' => '再送後の回答です。']]]]],
+                ], 200),
+        ]);
+        $service = new GeminiChatService;
+
+        try {
+            $service->ask('system', [], '1回目の質問');
+            $this->fail('GeminiChatException was not thrown.');
+        } catch (GeminiChatException) {
+            // 想定通りの失敗。Service 自体は失敗状態を保持しないため、次の呼び出しは独立して成功しうる。
+        }
+
+        $result = $service->ask('system', [], '2回目の質問');
+
+        $this->assertSame('再送後の回答です。', $result['content']);
     }
 }

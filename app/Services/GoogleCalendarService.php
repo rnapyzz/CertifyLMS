@@ -15,6 +15,7 @@ use Google\Service\Calendar\Event as GoogleEvent;
 use Google\Service\Calendar\EventDateTime;
 use Google\Service\Calendar\FreeBusyRequest;
 use Google\Service\Calendar\FreeBusyRequestItem;
+use GuzzleHttp\ClientInterface as GuzzleClientInterface;
 use Throwable;
 
 /**
@@ -37,6 +38,13 @@ class GoogleCalendarService
 
     /** アクセストークンの有効期限までの猶予(秒)。この秒数以内に切れる場合は事前に更新する。 */
     private const TOKEN_REFRESH_BUFFER_SECONDS = 60;
+
+    /**
+     * テストで Guzzle MockHandler 等の HTTP トランスポートを差し込むための任意の注入口。
+     * null(デフォルト)の場合は Google\Client 標準のトランスポートを使用するため、
+     * 本番 / 既存の呼び出し元(DI コンテナ経由の自動解決)の挙動は一切変わらない。
+     */
+    public function __construct(private readonly ?GuzzleClientInterface $httpClient = null) {}
 
     public function buildAuthorizationUrl(string $state, string $redirectUri): string
     {
@@ -242,6 +250,10 @@ class GoogleCalendarService
         $client->setClientId((string) config('services.google.client_id'));
         $client->setClientSecret((string) config('services.google.client_secret'));
         $client->setRedirectUri($redirectUri ?? (string) config('services.google.redirect_uri'));
+
+        if ($this->httpClient !== null) {
+            $client->setHttpClient($this->httpClient);
+        }
 
         return $client;
     }
