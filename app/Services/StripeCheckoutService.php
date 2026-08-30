@@ -59,7 +59,22 @@ class StripeCheckoutService
             ],
             'success_url' => $successUrl.'?session_id={CHECKOUT_SESSION_ID}',
             'cancel_url' => $cancelUrl,
+        ], [
+            'idempotency_key' => $this->idempotencyKey($user, $pack),
         ]);
+    }
+
+    /**
+     * 二重クリックや複数タブからの短時間の連続送信で Stripe 側に複数の Checkout Session
+     * (＝複数課金)が作られないよう、同一ユーザー・同一パックへの直近 60 秒以内の作成要求を
+     * Stripe の idempotency key でまとめる(同じキーでの再送は Stripe が最初のレスポンスを
+     * 再利用して返す)。60 秒より後の再購入は別セッションとして扱われ、正当な買い直しは妨げない。
+     */
+    private function idempotencyKey(User $user, MeetingPack $pack): string
+    {
+        $window = intdiv(now()->timestamp, 60);
+
+        return hash('sha256', "checkout:{$user->id}:{$pack->id}:{$window}");
     }
 
     /**

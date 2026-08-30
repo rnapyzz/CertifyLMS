@@ -40,7 +40,12 @@ return [
             'driver' => 'database',
             'table' => 'jobs',
             'queue' => 'default',
-            'retry_after' => 90,
+            // Laravel既定値(90秒)は、通知/メールの段階的リトライ間隔(App\Concerns\HasQueuedRetryPolicy、
+            // 最大300秒)や無制限のSMTPタイムアウト(config/mail.phpのtimeout未設定)と比べて短すぎ、
+            // 単に送信に時間がかかっているだけのジョブを「ワーカーが落ちた」と誤認して別ワーカーに
+            // 再割当し、二重送信を招くおそれがあった(T-A-05 フォローアップ)。
+            // queue:work の既定タイムアウト(60秒)より十分大きい値に設定する。
+            'retry_after' => 600,
             'after_commit' => false,
         ],
 

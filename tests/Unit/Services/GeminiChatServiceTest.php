@@ -77,6 +77,24 @@ class GeminiChatServiceTest extends TestCase
         });
     }
 
+    public function test_ask_sends_api_key_via_header_not_url_query_string(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => 'ok']]]]],
+            ], 200),
+        ]);
+
+        $service = new GeminiChatService;
+        $service->ask('system', [], 'question');
+
+        Http::assertSent(function ($request) {
+            return $request->hasHeader('X-Goog-Api-Key', 'test-api-key')
+                && ! str_contains($request->url(), 'test-api-key')
+                && ! str_contains($request->url(), 'key=');
+        });
+    }
+
     public function test_ask_throws_with_upstream_status_on_http_error(): void
     {
         Http::fake([

@@ -10,6 +10,7 @@ use App\Models\AiChatMessage;
 use App\Models\User;
 use App\Services\GeminiChatService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Mockery;
 use Tests\TestCase;
 
@@ -97,6 +98,41 @@ class AiChatMessageControllerTest extends TestCase
 
         $response->assertStatus(429);
         $this->assertDatabaseMissing('ai_chat_messages', ['content' => 'もう一つの質問']);
+    }
+
+    /**
+     * 日次上限チェック → 発言 INSERT が User 行の排他ロックで直列化されていることを検証する
+     * (同一受講生からの同時送信による TOCTOU での上限超過を防ぐため)。
+     */
+    public function test_store_locks_user_row_while_checking_daily_limit(): void
+    {
+        $student = User::factory()->student()->create();
+        $conversation = AiChatConversation::factory()->for($student)->create();
+
+        $mock = Mockery::mock(GeminiChatService::class);
+        $mock->shouldReceive('ask')->once()->andReturn([
+            'content' => 'AI の回答です。',
+            'model' => 'gemini-2.5-flash',
+            'input_tokens' => null,
+            'output_tokens' => null,
+            'response_time_ms' => 500,
+        ]);
+        $mock->shouldReceive('generateTitle')->once()->andReturn('自動タイトル');
+        $this->app->instance(GeminiChatService::class, $mock);
+
+        $locked = false;
+        DB::listen(function ($query) use (&$locked): void {
+            if (str_contains(strtolower($query->sql), 'select * from `users`') && str_contains(strtolower($query->sql), 'for update')) {
+                $locked = true;
+            }
+        });
+
+        $this->actingAs($student)->postJson(
+            route('ai-chat.conversations.messages.store', $conversation),
+            ['content' => '質問です']
+        )->assertOk();
+
+        $this->assertTrue($locked, 'users 行への排他ロック(SELECT ... FOR UPDATE)が発行されるはず');
     }
 
     public function test_store_validates_empty_content(): void
