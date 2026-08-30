@@ -116,6 +116,15 @@ sail artisan test                  # 全テスト実行
 sail artisan test --filter=Xxx    # クラス名・メソッド名で絞り込み
 ```
 
+Google カレンダー / Gemini AI / Stripe との連携部分のテストは、実際の外部 API 通信を一切行わず
+(`Http::preventStrayRequests()` によるガード、Guzzle `MockHandler` の注入、署名検証のみのローカル
+計算)、レスポンスをスタブして検証しています。これらのテストには `@group external-api` を付与して
+あるため、除外して実行することもできます。
+
+```bash
+sail artisan test --exclude-group=external-api    # 外部連携関連のテストを除外して実行
+```
+
 ## コード整形
 
 Laravel Pint を使用しています。コミット前に実行してください。
