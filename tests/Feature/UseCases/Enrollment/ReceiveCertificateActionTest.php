@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\UseCases\Enrollment;
 
 use App\Enums\EnrollmentStatus;
+use App\Exceptions\Certification\CertificatePdfGenerationException;
 use App\Exceptions\Enrollment\CompletionNotEligibleException;
 use App\Exceptions\Enrollment\EnrollmentNotLearningException;
 use App\Models\Certification;
@@ -12,8 +13,10 @@ use App\Models\Enrollment;
 use App\Models\MockExam;
 use App\Models\MockExamSession;
 use App\Models\User;
+use App\Services\CertificatePdfService;
 use App\UseCases\Enrollment\ReceiveCertificateAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
 use Tests\TestCase;
 
 /**
@@ -87,6 +90,34 @@ class ReceiveCertificateActionTest extends TestCase
         $this->expectException(EnrollmentNotLearningException::class);
 
         app(ReceiveCertificateAction::class)($enrollment);
+    }
+
+    public function test_enrollment_status_change_is_rolled_back_when_pdf_generation_fails(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+        $exam = MockExam::factory()->for($certification)->create(['is_published' => true]);
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['pass' => true]);
+
+        $mock = Mockery::mock(CertificatePdfService::class);
+        $mock->shouldReceive('generate')->once()->andThrow(new CertificatePdfGenerationException('boom'));
+        $this->app->instance(CertificatePdfService::class, $mock);
+
+        try {
+            app(ReceiveCertificateAction::class)($enrollment);
+            $this->fail('CertificatePdfGenerationException was not thrown.');
+        } catch (CertificatePdfGenerationException $e) {
+            // expected
+        }
+
+        // PDF 生成失敗で修了証受領フロー全体がロールバックされ、Enrollment は learning のまま、
+        // status ログも Certificate も一切残らないことを確認する
+        // (「PDF 生成に失敗した場合、修了証は発行されていない状態に保つ」)。
+        $this->assertSame(EnrollmentStatus::Learning, $enrollment->refresh()->status);
+        $this->assertNull($enrollment->passed_at);
+        $this->assertDatabaseCount('certificates', 0);
+        $this->assertDatabaseMissing('enrollment_status_logs', ['enrollment_id' => $enrollment->id]);
     }
 
     public function test_no_certificate_is_created_when_published_exam_count_is_zero(): void

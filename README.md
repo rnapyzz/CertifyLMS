@@ -133,6 +133,8 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 - Blade + Tailwind CSS + Vite（JavaScript は素の JS、フレームワーク不使用）
 - PHPUnit / Laravel Pint
 - league/commonmark（教材本文の Markdown レンダリング）
+- mpdf/mpdf（修了証 PDF 生成。日本語表記のため IPA ゴシック `resources/fonts/ipag.ttf`（IPA Font License v1.0、同梱)を使用)
+- stripe/stripe-php（追加面談パック購入の決済連携）
 - Pusher（チャットのリアルタイム配信）
 - Docker（Laravel Sail）
 
