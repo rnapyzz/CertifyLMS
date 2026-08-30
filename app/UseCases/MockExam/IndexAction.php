@@ -15,6 +15,11 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
  * - admin: 全資格配下の MockExam
  * - coach: 担当資格(certification.coaches)配下の MockExam のみ
  * フィルタ: keyword(部分一致) / certification_id / is_published
+ *
+ * `resources/views/mock-exam/management/index.blade.php` が行ごとに参照する
+ * 所属資格(certification) / 更新者(updatedBy) / 問題数(mockExamQuestions) を
+ * Eager Loading + withCount で一括取得し、ページ内の模試件数分の N+1 を防ぐ
+ * (作成者(createdBy) は本画面では表示しないため取得しない)。
  */
 final class IndexAction
 {
@@ -25,7 +30,9 @@ final class IndexAction
         ?bool $isPublished = null,
         int $perPage = 20,
     ): LengthAwarePaginator {
-        $query = MockExam::query();
+        $query = MockExam::query()
+            ->with(['certification', 'updatedBy'])
+            ->withCount('mockExamQuestions');
 
         if ($auth->role === UserRole::Coach) {
             $query->whereHas(
