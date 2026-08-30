@@ -10,6 +10,8 @@ use App\Models\Enrollment;
 use App\Models\User;
 use App\Services\EnrollmentStatusChangeService;
 use App\UseCases\Dashboard\FetchAdminDashboardAction;
+use App\UseCases\Enrollment\DestroyAction;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -155,6 +157,63 @@ class AdminDashboardCacheTest extends TestCase
             0.5,
             $afterRate,
             '状態遷移後は修了率キャッシュも無効化され、最新の修了率(1/2)が返るはず',
+        );
+    }
+
+    /**
+     * 受講解除(`Enrollment\DestroyAction`)は status を変えず SoftDelete するのみのため
+     * `EnrollmentStatusChangeService::recordStatusChange()` を経由しないが、
+     * `EnrollmentStatsService::adminKpi()` は `deleted_at IS NULL` で絞り込むため学習中件数が減る。
+     * この経路でもキャッシュが無効化されることを検証する(T-A-06)。
+     */
+    public function test_admin_kpi_cache_is_invalidated_on_enrollment_destroy(): void
+    {
+        // Arrange: admin + 受講中 2 件を 1 度集計してキャッシュさせる
+        $admin = User::factory()->admin()->inProgress()->create();
+        $cert = Certification::factory()->published()->create();
+        $enrollments = Enrollment::factory()->for($cert)->learning()->count(2)->create();
+        Cache::flush();
+        app(FetchAdminDashboardAction::class)($admin);
+
+        // Act: 1 件を受講解除(SoftDelete、status 遷移を伴わない)
+        app(DestroyAction::class)($enrollments->first());
+        $after = app(FetchAdminDashboardAction::class)($admin);
+
+        // Assert: KPI キャッシュが無効化され、最新の受講中件数(1 件)が返る
+        $this->assertSame(
+            1,
+            $after->kpi['learning_count'],
+            '受講解除後は KPI キャッシュが無効化され、最新の受講中件数が返るはず',
+        );
+    }
+
+    /**
+     * TTL は `config('dashboard.admin_cache_ttl')` で調整できる。ここでは短い TTL に差し替え、
+     * 状態遷移(無効化経路)を通さなくても TTL 経過後は再計算されることを検証する
+     * (スコープ外事象=資格の公開・非公開等での即時無効化を、保存時間の失効で許容する設計の裏付け)。
+     */
+    public function test_admin_kpi_cache_expires_after_configured_ttl(): void
+    {
+        // Arrange: TTL を 5 秒に差し替え、admin + 受講中 2 件を集計してキャッシュさせる
+        config(['dashboard.admin_cache_ttl' => 5]);
+        $admin = User::factory()->admin()->inProgress()->create();
+        $cert = Certification::factory()->published()->create();
+        Enrollment::factory()->for($cert)->learning()->count(2)->create();
+        Cache::flush();
+        $first = app(FetchAdminDashboardAction::class)($admin);
+
+        // Act: 無効化経路を通さず直接 INSERT → TTL 経過後(6 秒後)に再度取得
+        Enrollment::factory()->for($cert)->learning()->count(3)->create();
+        Carbon::setTestNow(now()->addSeconds(6));
+        $after = app(FetchAdminDashboardAction::class)($admin);
+        Carbon::setTestNow();
+
+        // Assert: TTL 経過により再計算され、直接 INSERT した分も反映される
+        $this->assertSame(2, $first->kpi['learning_count']);
+        $this->assertSame(
+            5,
+            $after->kpi['learning_count'],
+            'TTL 経過後は再計算され、最新の受講中件数が返るはず',
         );
     }
 }

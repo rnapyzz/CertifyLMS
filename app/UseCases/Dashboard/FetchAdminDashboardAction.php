@@ -17,8 +17,13 @@ use App\UseCases\Dashboard\ViewModels\AdminDashboardViewModel;
  * (admin 宛通知は notification spec で発火しないため、admin 通知導線は実用上死に機能になる)。
  *
  * 本 Action は集計の取得とセクション単位の例外フォールバック(safe)のみを担う(薄い集約に保つ)。
+ * `EnrollmentStatsService::adminKpi` / `completionRateByCertification` は全 Enrollment を走査する
+ * 重い集計のため Service 内部でキャッシュされる(T-A-06、詳細は `EnrollmentStatsService` の docblock)。
+ * 本 Action 自体はキャッシュの有無を意識しない(`Cache` facade を直接使わない。
+ * `tests/Feature/Architecture/DashboardArchitectureTest.php` が dashboard Action での使用を禁止している)。
  *
  * @see DashboardController::index()
+ * @see EnrollmentStatsService
  */
 final class FetchAdminDashboardAction
 {

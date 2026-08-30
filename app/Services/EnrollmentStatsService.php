@@ -6,12 +6,19 @@ namespace App\Services;
 
 use App\Enums\EnrollmentStatus;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Enrollment 集計を提供する Service。admin ダッシュボード KPI で利用される。
  *
  * 全体 KPI(adminKpi)と資格別修了率(completionRateByCertification)は全 enrollment を走査する重い集計。
+ * 管理者は運用モニタリングで頻繁に画面を開くため、この 2 つは `config('dashboard.admin_cache_ttl')`
+ * 秒だけ `Cache::remember()` で保持する(T-A-06)。キャッシュは呼出元(`app/UseCases/Dashboard` 配下)
+ * ではなく本 Service に閉じ込める(`Cache facade を dashboard Action で直接使わない」という既存の
+ * アーキテクチャテスト `tests/Feature/Architecture/DashboardArchitectureTest.php` の制約に準拠)。
+ * 無効化は受講状態が変わる操作側から `forgetAdminCache()` を呼んで行う
+ * (`App\Services\EnrollmentStatusChangeService::recordStatusChange()` / `App\UseCases\Enrollment\DestroyAction`)。
  *
  * 集計対象は SoftDelete 除外。paused 集計は採用しない(3 値モデル)。
  * 受講生ダッシュボードの Action / Controller テストで Mockery 経由 mock するため `final` は付けない。
@@ -25,24 +32,41 @@ class EnrollmentStatsService
      */
     public function adminKpi(): array
     {
-        $counts = DB::table('enrollments')
-            ->whereNull('deleted_at')
-            ->selectRaw('status, COUNT(*) as cnt')
-            ->groupBy('status')
-            ->pluck('cnt', 'status')
-            ->all();
+        return Cache::remember(
+            config('dashboard.admin_kpi_cache_key'),
+            config('dashboard.admin_cache_ttl'),
+            function (): array {
+                $counts = DB::table('enrollments')
+                    ->whereNull('deleted_at')
+                    ->selectRaw('status, COUNT(*) as cnt')
+                    ->groupBy('status')
+                    ->pluck('cnt', 'status')
+                    ->all();
 
-        $learning = (int) ($counts[EnrollmentStatus::Learning->value] ?? 0);
-        $passed = (int) ($counts[EnrollmentStatus::Passed->value] ?? 0);
-        $failed = (int) ($counts[EnrollmentStatus::Failed->value] ?? 0);
+                $learning = (int) ($counts[EnrollmentStatus::Learning->value] ?? 0);
+                $passed = (int) ($counts[EnrollmentStatus::Passed->value] ?? 0);
+                $failed = (int) ($counts[EnrollmentStatus::Failed->value] ?? 0);
 
-        return [
-            'learning_count' => $learning,
-            'passed_count' => $passed,
-            'failed_count' => $failed,
-            'total' => $learning + $passed + $failed,
-            'by_certification' => $this->byCertification(),
-        ];
+                return [
+                    'learning_count' => $learning,
+                    'passed_count' => $passed,
+                    'failed_count' => $failed,
+                    'total' => $learning + $passed + $failed,
+                    'by_certification' => $this->byCertification(),
+                ];
+            },
+        );
+    }
+
+    /**
+     * 管理者ダッシュボード集計キャッシュ(全体 KPI + 資格別修了率)を無効化する。
+     * 受講状態が変わり集計結果が古くなりうる操作の完了後、呼出元が `DB::afterCommit()` 内で呼ぶ
+     * (コミット前に forget すると、他コネクションが変更前の値のまま再キャッシュしてしまうため)。
+     */
+    public function forgetAdminCache(): void
+    {
+        Cache::forget(config('dashboard.admin_kpi_cache_key'));
+        Cache::forget(config('dashboard.admin_completion_rate_cache_key'));
     }
 
     /**
@@ -77,15 +101,19 @@ class EnrollmentStatsService
      */
     public function completionRateByCertification(): Collection
     {
-        return collect($this->byCertification())
-            ->filter(fn (array $row): bool => $row['total'] > 0)
-            ->map(function (array $row): array {
-                $row['completion_rate'] = round($row['passed'] / $row['total'], 4);
+        return Cache::remember(
+            config('dashboard.admin_completion_rate_cache_key'),
+            config('dashboard.admin_cache_ttl'),
+            fn (): Collection => collect($this->byCertification())
+                ->filter(fn (array $row): bool => $row['total'] > 0)
+                ->map(function (array $row): array {
+                    $row['completion_rate'] = round($row['passed'] / $row['total'], 4);
 
-                return $row;
-            })
-            ->sortByDesc('total')
-            ->values();
+                    return $row;
+                })
+                ->sortByDesc('total')
+                ->values(),
+        );
     }
 
     /**
