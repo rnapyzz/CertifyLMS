@@ -12,13 +12,17 @@ use App\Models\AiChatConversation;
 use App\Models\AiChatMessage;
 use App\Models\User;
 use App\Services\GeminiChatService;
+use Illuminate\Support\Facades\DB;
 
 /**
  * 受講生の発言を永続化し、Gemini に問い合わせて AI の応答も永続化するユースケース。
  *
  * - 日次送信上限に達している場合は何も永続化せず `AiChatDailyLimitExceededException`(429)を投げる。
+ *   上限チェック → 発言 INSERT は User 行の排他ロックで直列化し、同一受講生からの同時送信
+ *   (複数タブ等)による TOCTOU での上限超過を防ぐ(`MeetingQuota\ConsumeQuotaAction` と同じ方針)。
  * - 受講生の発言は AI 呼出の成否によらず必ず残す(「AI が一時的に失敗しても質問は残ってほしい」)。
  * - Gemini 呼出は DB トランザクションの外で行う(外部 API のレイテンシで DB ロックを長時間握らないため)。
+ *   上限チェック用のロックは発言 INSERT までの短いトランザクションで完結させ、Gemini 呼出前に解放する。
  * - 会話の最初のやり取りが成功し、かつ auto_title_enabled であれば AI にタイトルを生成させる
  *   (失敗しても致命的ではないため `GeminiChatService::generateTitle` は例外を投げず null を返す)。
  */
@@ -33,21 +37,27 @@ final class SendMessageAction
      */
     public function __invoke(User $user, AiChatConversation $conversation, string $content): array
     {
-        if (AiChatMessage::dailyCountForUser($user) >= (int) config('ai-chat.daily_message_limit')) {
-            throw new AiChatDailyLimitExceededException;
-        }
+        [$userMessage, $isFirstExchange, $history] = DB::transaction(function () use ($user, $conversation, $content) {
+            User::query()->whereKey($user->id)->lockForUpdate()->first();
 
-        $isFirstExchange = ! $conversation->messages()->exists();
-        $history = $this->buildHistory($conversation);
+            if (AiChatMessage::dailyCountForUser($user) >= (int) config('ai-chat.daily_message_limit')) {
+                throw new AiChatDailyLimitExceededException;
+            }
 
-        $userMessage = AiChatMessage::create([
-            'conversation_id' => $conversation->id,
-            'user_id' => $user->id,
-            'role' => AiChatMessageRole::User,
-            'status' => AiChatMessageStatus::Completed,
-            'content' => $content,
-        ]);
-        $conversation->forceFill(['last_message_at' => $userMessage->created_at])->save();
+            $isFirstExchange = ! $conversation->messages()->exists();
+            $history = $this->buildHistory($conversation);
+
+            $userMessage = AiChatMessage::create([
+                'conversation_id' => $conversation->id,
+                'user_id' => $user->id,
+                'role' => AiChatMessageRole::User,
+                'status' => AiChatMessageStatus::Completed,
+                'content' => $content,
+            ]);
+            $conversation->forceFill(['last_message_at' => $userMessage->created_at])->save();
+
+            return [$userMessage, $isFirstExchange, $history];
+        });
 
         $upstreamStatus = null;
 

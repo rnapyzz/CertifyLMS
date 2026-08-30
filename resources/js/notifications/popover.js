@@ -43,10 +43,13 @@ export function initNotificationPopover() {
     let isOpen = false;
     let csrfReady = false;
     let closeTimer = null;
+    let fetchGeneration = 0;
 
     async function ensureCsrfCookie() {
         if (csrfReady) return;
-        await fetch(CSRF_COOKIE_URL, { credentials: 'same-origin' });
+        // keepalive: ベル連打等でポップオーバーが閉じた直後にページ遷移が起きても、
+        // Cookie 取得自体は完了させる(既読化 POST の前提となるため)。
+        await fetch(CSRF_COOKIE_URL, { credentials: 'same-origin', keepalive: true });
         csrfReady = true;
     }
 
@@ -128,6 +131,11 @@ export function initNotificationPopover() {
     }
 
     async function fetchNotifications() {
+        // ベル連打で開閉を繰り返すと複数の fetch が同時に in-flight になりうる。世代番号を
+        // 記録し、自分より新しい fetch が既に開始されていれば古いレスポンスの反映を捨てる
+        // (後に開始したリクエストが先に返ってきた場合、逆に古いリクエストが後から返ってきて
+        // 上書きしてしまう順序逆転を防ぐ)。
+        const generation = ++fetchGeneration;
         setLoading(true);
         try {
             const res = await fetch(API_BASE, {
@@ -136,14 +144,16 @@ export function initNotificationPopover() {
             });
             if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
             const data = await res.json();
+            if (generation !== fetchGeneration) return;
             notifications = Array.isArray(data.notifications) ? data.notifications : [];
             updateUnreadCount(data.unread_count ?? 0);
             render();
         } catch (e) {
+            if (generation !== fetchGeneration) return;
             notifications = [];
             render();
         } finally {
-            setLoading(false);
+            if (generation === fetchGeneration) setLoading(false);
         }
     }
 
@@ -155,11 +165,15 @@ export function initNotificationPopover() {
             updateUnreadCount(current);
         }
 
+        // keepalive: この直後に window.location.href で遷移するため、fetch を待たずに
+        // 遷移してもリクエスト自体はブラウザがバックグラウンドで完了させる(keepalive なしだと
+        // 遷移でリクエストが中断され、既読化が反映されないまま「既読風」表示だけが残りうる)。
         ensureCsrfCookie()
             .then(() => fetch(`${API_BASE}/${notification.id}/read`, {
                 method: 'POST',
                 headers: apiHeaders(),
                 credentials: 'same-origin',
+                keepalive: true,
             }))
             .catch(() => {});
 

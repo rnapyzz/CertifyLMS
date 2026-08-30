@@ -61,8 +61,12 @@ class GeminiChatService
         $startedAt = microtime(true);
 
         try {
+            // API キーはクエリパラメータではなく `X-Goog-Api-Key` ヘッダで渡す。接続失敗時の
+            // 例外メッセージには失敗した URL がそのまま含まれ report() 経由でログに残るため、
+            // クエリパラメータに載せるとログにキーが平文で漏れてしまう。
             $response = Http::timeout((int) config('ai-chat.gemini.timeout', 20))
-                ->post(self::API_BASE_URL."/{$model}:generateContent?key={$apiKey}", [
+                ->withHeaders(['X-Goog-Api-Key' => $apiKey])
+                ->post(self::API_BASE_URL."/{$model}:generateContent", [
                     'systemInstruction' => [
                         'parts' => [['text' => $systemPrompt]],
                     ],
