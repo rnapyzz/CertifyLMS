@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace App\Notifications\Auth;
 
+use App\Concerns\HasQueuedRetryPolicy;
 use Illuminate\Auth\Notifications\ResetPassword as BaseResetPassword;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 
-class ResetPasswordNotification extends BaseResetPassword
+/**
+ * `ShouldQueue`: メール送信を発火元リクエストから切り離す(T-A-05)。
+ */
+class ResetPasswordNotification extends BaseResetPassword implements ShouldQueue
 {
+    use HasQueuedRetryPolicy, Queueable;
+
     public function toMail($notifiable): MailMessage
     {
         $url = url(route('password.reset', [

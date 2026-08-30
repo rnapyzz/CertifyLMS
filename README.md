@@ -125,6 +125,33 @@ Google カレンダー / Gemini AI / Stripe との連携部分のテストは、
 sail artisan test --exclude-group=external-api    # 外部連携関連のテストを除外して実行
 ```
 
+## キュー Worker（通知・メール配信）
+
+通知(チャット / Q&A 返信 / 面談の予約・キャンセル・リマインダー / 管理者お知らせ)とメール送信(招待 /
+パスワード再設定)は、発火元の HTTP リクエストから切り離してバックグラウンドのキュー(DB ベース、
+`jobs` テーブル)で処理します。**worker を起動していないと、これらは一切送信されません**(キューに
+積まれたまま溜まり続けます)。ローカル開発では以下を別ターミナルで起動したままにしてください。
+
+```bash
+sail artisan queue:work    # フォアグラウンドで起動し続け、積まれたジョブを順次処理する
+```
+
+- 一時的な送信失敗(SMTP 到達不可等)は、10 秒 → 30 秒 → 60 秒 → 300 秒の間隔を空けながら最大 5 回まで
+  自動リトライします(`App\Concerns\HasQueuedRetryPolicy`)。
+- リトライ上限を超えた送信は `failed_jobs` テーブルへ記録され、内容を確認した上で再投入できます。
+
+  ```bash
+  sail artisan queue:failed          # 失敗ジョブの一覧
+  sail artisan queue:retry {id}      # 指定したジョブを再投入(id は queue:failed の ID 列)
+  sail artisan queue:retry all       # 失敗ジョブを全件再投入
+  ```
+
+- コードを変更した場合、起動中の `queue:work` プロセスには反映されません。`sail artisan queue:restart`
+  で全 worker に完了後の再起動を指示するか、開発中は `sail artisan queue:listen`(ジョブ毎に再起動する
+  ぶん低速)を使ってください。
+- 本番運用では `queue:work` をプロセスマネージャ(Supervisor 等)の管理下で常駐させる想定です(具体的な
+  プロセス管理の構成は本リポジトリのスコープ外)。
+
 ## コード整形
 
 Laravel Pint を使用しています。コミット前に実行してください。
@@ -150,6 +177,8 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 ## 環境変数
 
 `.env.example` をコピーするだけで、すべての機能がローカルで動作します（メールは Mailpit に配信されます）。
+
+- `QUEUE_CONNECTION` — 通知・メール送信のキュー基盤です(既定は `database`)。[キュー Worker](#キュー-worker通知メール配信)を参照してください。
 
 - `PUSHER_*` — チャットのリアルタイム配信に使用します。有効にする場合は Pusher のキーを取得して設定し、`BROADCAST_DRIVER=pusher` に変更してください。未設定（既定の `BROADCAST_DRIVER=log`）でもメッセージの送受信自体は動作し、相手画面へのリアルタイム反映のみ行われません
 
