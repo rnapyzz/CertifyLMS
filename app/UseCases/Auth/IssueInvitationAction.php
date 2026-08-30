@@ -153,7 +153,11 @@ final class IssueInvitationAction
                 'status' => InvitationStatus::Pending->value,
             ]);
 
-            Mail::send(new InvitationMail($invitation));
+            // コミット後にキューへ投入する(ロールバック時に送信が漏れないようにするため。T-A-05)。
+            // `InvitationMail` は ShouldQueue のため `Mail::send()` は自動的にキュー投入として処理される。
+            DB::afterCommit(function () use ($invitation) {
+                Mail::send(new InvitationMail($invitation));
+            });
 
             return $invitation;
         });

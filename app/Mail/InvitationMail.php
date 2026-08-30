@@ -4,17 +4,22 @@ declare(strict_types=1);
 
 namespace App\Mail;
 
+use App\Concerns\HasQueuedRetryPolicy;
 use App\Models\Invitation;
 use App\Services\InvitationTokenService;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class InvitationMail extends Mailable
+/**
+ * `ShouldQueue`: 招待メール送信を発火元リクエストから切り離す(T-A-05)。
+ */
+class InvitationMail extends Mailable implements ShouldQueue
 {
-    use Queueable, SerializesModels;
+    use HasQueuedRetryPolicy, Queueable, SerializesModels;
 
     public function __construct(public Invitation $invitation) {}
 

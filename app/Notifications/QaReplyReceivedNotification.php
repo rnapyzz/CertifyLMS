@@ -4,17 +4,24 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Concerns\HasQueuedRetryPolicy;
 use App\Enums\NotificationType;
 use App\Models\QaReply;
 use App\Models\User;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
  * 自分が投稿した質問掲示板のスレッドに回答が届いたことを知らせる通知。
+ *
+ * `ShouldQueue`: 送信(mail + database 両チャネル)を発火元リクエストから切り離す(T-A-05)。
  */
-final class QaReplyReceivedNotification extends Notification
+final class QaReplyReceivedNotification extends Notification implements ShouldQueue
 {
+    use HasQueuedRetryPolicy, Queueable;
+
     public function __construct(public readonly QaReply $reply) {}
 
     /**

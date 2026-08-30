@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Concerns\HasQueuedRetryPolicy;
 use App\Enums\MeetingReminderWindow;
 use App\Enums\NotificationType;
 use App\Models\Meeting;
 use App\Models\User;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -15,9 +18,13 @@ use Illuminate\Notifications\Notification;
  * 予約済み面談の前日 / 開始 1 時間前に、受講生・コーチ双方へ届くリマインダー通知。
  * 文面は「受講生: ○○ / コーチ: ○○」の形で当事者名を両方併記するため、
  * 受信者が受講生かコーチかを判定する分岐は持たない。
+ *
+ * `ShouldQueue`: 送信(mail + database 両チャネル)を Schedule Command から切り離す(T-A-05)。
  */
-final class MeetingReminderNotification extends Notification
+final class MeetingReminderNotification extends Notification implements ShouldQueue
 {
+    use HasQueuedRetryPolicy, Queueable;
+
     public function __construct(
         public readonly Meeting $meeting,
         public readonly MeetingReminderWindow $window,

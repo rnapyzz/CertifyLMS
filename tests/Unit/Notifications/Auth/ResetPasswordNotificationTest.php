@@ -6,6 +6,7 @@ namespace Tests\Unit\Notifications\Auth;
 
 use App\Models\User;
 use App\Notifications\Auth\ResetPasswordNotification;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\Messages\MailMessage;
 use Tests\TestCase;
@@ -43,5 +44,14 @@ class ResetPasswordNotificationTest extends TestCase
 
         // Assert
         $this->assertStringContainsString('unique-token-123', $mail->actionUrl, 'パスワード再設定 URL にトークンが埋め込まれるはず');
+    }
+
+    public function test_implements_should_queue_for_async_delivery(): void
+    {
+        // Arrange
+        $notification = new ResetPasswordNotification('test-reset-token');
+
+        // Assert
+        $this->assertInstanceOf(ShouldQueue::class, $notification, 'メール送信を発火元リクエストから切り離すはず(T-A-05)');
     }
 }

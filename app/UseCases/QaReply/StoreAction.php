@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * 受講生 / コーチによる回答の新規投稿ユースケース。
  * 投稿後に `QaReplyPosted` を発火し、スレッド投稿者へ通知(アプリ内 + メール)する
- * (`App\Listeners\SendQaReplyNotification`)。
+ * (`App\Listeners\SendQaReplyNotification`)。イベントは `DB::afterCommit()` で登録し、
+ * コミットが確定した場合のみ発火させる(`App\UseCases\Meeting\StoreAction` と同じ方針)。
  */
 final class StoreAction
 {
@@ -22,15 +23,17 @@ final class StoreAction
      */
     public function __invoke(User $user, QaThread $thread, array $validated): QaReply
     {
-        $reply = DB::transaction(function () use ($user, $thread, $validated) {
-            return $thread->replies()->create([
+        return DB::transaction(function () use ($user, $thread, $validated) {
+            $reply = $thread->replies()->create([
                 ...$validated,
                 'user_id' => $user->id,
             ]);
+
+            DB::afterCommit(function () use ($reply) {
+                event(new QaReplyPosted($reply));
+            });
+
+            return $reply;
         });
-
-        event(new QaReplyPosted($reply));
-
-        return $reply;
     }
 }

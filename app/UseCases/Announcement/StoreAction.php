@@ -22,8 +22,11 @@ use Illuminate\Support\Facades\DB;
  * と同じ判定基準。招待中 / 卒業 / 退会済のユーザーは配信対象に含まれない)。
  *
  * 通知送信は `Announcement` の DB コミット後に行う(`App\UseCases\QaReply\StoreAction` と同様、
- * 副作用をトランザクション境界の外に出す設計)。受信者ごとに個別 `notify()` し、1 人の配信失敗が
+ * 副作用をトランザクション境界の外に出す設計。イベントではなく直接 `notify()` するため
+ * `DB::afterCommit()` で登録する)。受信者ごとに個別 `notify()` し、1 人の配信失敗が
  * 残りの受信者への送信を巻き込まないようにする(`App\Listeners\SendChatMessageNotification` と同じ理由)。
+ * 各 `notify()` は `AdminAnnouncementNotification::ShouldQueue` によりキューへ積むだけで即座に返るため、
+ * 対象受講生が多い一斉配信でも発火元リクエストはブロックされない(T-A-05)。
  */
 final class StoreAction
 {
@@ -37,26 +40,30 @@ final class StoreAction
         $targetType = AnnouncementTargetType::from($validated['target_type']);
         $recipients = $this->resolveRecipients($targetType, $validated);
 
-        $announcement = DB::transaction(fn () => Announcement::create([
-            'title' => $validated['title'],
-            'body' => $validated['body'],
-            'target_type' => $targetType,
-            'target_certification_id' => $targetType === AnnouncementTargetType::Certification
-                ? $validated['target_certification_id']
-                : null,
-            'target_user_id' => $targetType === AnnouncementTargetType::User
-                ? $validated['target_user_id']
-                : null,
-            'created_by_user_id' => $admin->id,
-            'dispatched_count' => $recipients->count(),
-            'dispatched_at' => now(),
-        ]));
+        return DB::transaction(function () use ($admin, $validated, $targetType, $recipients) {
+            $announcement = Announcement::create([
+                'title' => $validated['title'],
+                'body' => $validated['body'],
+                'target_type' => $targetType,
+                'target_certification_id' => $targetType === AnnouncementTargetType::Certification
+                    ? $validated['target_certification_id']
+                    : null,
+                'target_user_id' => $targetType === AnnouncementTargetType::User
+                    ? $validated['target_user_id']
+                    : null,
+                'created_by_user_id' => $admin->id,
+                'dispatched_count' => $recipients->count(),
+                'dispatched_at' => now(),
+            ]);
 
-        foreach ($recipients as $recipient) {
-            $this->safeNotify(fn () => $recipient->notify(new AdminAnnouncementNotification($announcement)));
-        }
+            DB::afterCommit(function () use ($announcement, $recipients) {
+                foreach ($recipients as $recipient) {
+                    $this->safeNotify(fn () => $recipient->notify(new AdminAnnouncementNotification($announcement)));
+                }
+            });
 
-        return $announcement;
+            return $announcement;
+        });
     }
 
     /**
