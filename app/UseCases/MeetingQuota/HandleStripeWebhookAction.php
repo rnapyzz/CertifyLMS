@@ -24,10 +24,11 @@ use Stripe\Event as StripeEvent;
  * 再送されても、また万一同時に複数リクエストが届いても、残数の加算は高々 1 回しか起きない
  * (DB の行更新の原子性のみに依存し、追加のロックや別テーブルでの重複排除は不要)。
  *
- * `charge.refunded`: 返金の実行操作自体は本チケットのスコープ外(管理者が Stripe ダッシュボードから
- * 手動操作)だが、その結果は resources/views/meeting-pack/management/show.blade.php が
- * 既に PaymentStatus::Refunded バッジを前提にしているため、受動的に反映する
- * (残数を Purchased と同数だけ減算する MeetingQuotaTransaction を追加する)。
+ * `charge.refunded` はスコープ外のため未対応(他の想定外イベントと同じく無視してログのみ残す)。
+ * 返金操作自体・その結果の反映方法は別チケットで扱う。`PaymentStatus::Refunded` /
+ * `MeetingQuotaTransactionType::Refunded` の Enum ケース自体は
+ * resources/views/meeting-pack/management/show.blade.php が前提にしているため残しているが、
+ * 現状これらを実際に設定する経路は存在しない。
  */
 final class HandleStripeWebhookAction
 {
@@ -36,7 +37,6 @@ final class HandleStripeWebhookAction
         match ($event->type) {
             'checkout.session.completed' => $this->handleCompleted($event),
             'checkout.session.expired' => $this->handleExpired($event),
-            'charge.refunded' => $this->handleRefunded($event),
             default => Log::info('Stripe webhook: unhandled event type', ['type' => $event->type]),
         };
     }
@@ -102,40 +102,5 @@ final class HandleStripeWebhookAction
             ->where('stripe_checkout_session_id', $sessionId)
             ->where('status', PaymentStatus::Pending->value)
             ->update(['status' => PaymentStatus::Failed->value]);
-    }
-
-    private function handleRefunded(StripeEvent $event): void
-    {
-        $charge = $event->data->object;
-        $paymentIntentId = (string) ($charge->payment_intent ?? '');
-
-        if ($paymentIntentId === '') {
-            return;
-        }
-
-        $payment = Payment::query()->where('stripe_payment_intent_id', $paymentIntentId)->first();
-        if ($payment === null) {
-            return;
-        }
-
-        DB::transaction(function () use ($payment) {
-            $updated = Payment::query()
-                ->where('id', $payment->id)
-                ->where('status', PaymentStatus::Succeeded->value)
-                ->update(['status' => PaymentStatus::Refunded->value]);
-
-            if ($updated === 0) {
-                // Succeeded 以外(Pending / Failed / 既に Refunded)からは遷移しない。二重計上防止と同じ原理。
-                return;
-            }
-
-            MeetingQuotaTransaction::create([
-                'user_id' => $payment->user_id,
-                'type' => MeetingQuotaTransactionType::Refunded,
-                'amount' => -$payment->quantity,
-                'related_payment_id' => $payment->id,
-                'occurred_at' => now(),
-            ]);
-        });
     }
 }

@@ -46,12 +46,11 @@ class ResetPasswordNotificationTest extends TestCase
         $this->assertStringContainsString('unique-token-123', $mail->actionUrl, 'パスワード再設定 URL にトークンが埋め込まれるはず');
     }
 
-    public function test_implements_should_queue_for_async_delivery(): void
+    public function test_does_not_implement_should_queue_and_sends_synchronously(): void
     {
-        // Arrange
+        // パスワード再設定はスコープ外のため同期送信とする(要件確認済み、T-A-05)。
         $notification = new ResetPasswordNotification('test-reset-token');
 
-        // Assert
-        $this->assertInstanceOf(ShouldQueue::class, $notification, 'メール送信を発火元リクエストから切り離すはず(T-A-05)');
+        $this->assertNotInstanceOf(ShouldQueue::class, $notification);
     }
 }

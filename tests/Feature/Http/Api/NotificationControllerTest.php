@@ -79,13 +79,17 @@ class NotificationControllerTest extends TestCase
         $response->assertJsonPath('notifications.0.target_url', route('notifications.show', $notification));
     }
 
-    public function test_index_is_forbidden_for_admin(): void
+    public function test_index_returns_empty_list_for_admin_instead_of_forbidden(): void
     {
+        // 管理者はロールで弾かない。NotificationEligibilityService により管理者は通知を
+        // 一切受信しないため、200 + 空の一覧が正しい挙動(403 ではない。要件確認済み)。
         $admin = User::factory()->admin()->create();
 
-        $this->actingAs($admin)
-            ->getJson('/api/v1/notifications')
-            ->assertForbidden();
+        $response = $this->actingAs($admin)->getJson('/api/v1/notifications');
+
+        $response->assertOk();
+        $response->assertJsonCount(0, 'notifications');
+        $response->assertJsonPath('unread_count', 0);
     }
 
     public function test_index_requires_authentication(): void

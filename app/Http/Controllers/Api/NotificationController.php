@@ -10,11 +10,15 @@ use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 
 /**
- * TopBar 通知ポップオーバー向けの通知 JSON API(受講生 / コーチのみ、`auth:sanctum` + `role:student,coach` で保護)。
+ * TopBar 通知ポップオーバー向けの通知 JSON API(`auth:sanctum` で保護、本人宛の通知のみ)。
  *
  * 一覧はポップオーバー内ページネーションを持たない仕様(スコープ外)のため、直近 {@see self::LIST_LIMIT} 件のみ返す。
  * `unread_count` は常に受講生本人の未読総数(取得件数に関わらない実数)を返し、
  * TopBar バッジとポップオーバーの「未読」タブ件数の両方をこの値で同期させる想定。
+ *
+ * 管理者をロールで弾く実装はしない。管理者は `NotificationEligibilityService` により通知を
+ * 一切受信しない設計のため、`index()` は自然に空配列 + `unread_count: 0` を返す(403 ではなく
+ * 200 + 0 件が正しい挙動、要件確認済み)。
  *
  * 認可は `App\Policies\DatabaseNotificationPolicy::view`(本人宛のみ)に委譲し、
  * 既存の Web 版 `App\Http\Controllers\NotificationController` と同じ認可規則を踏襲する。
