@@ -201,26 +201,58 @@ class GeminiChatServiceTest extends TestCase
         }
     }
 
-    public function test_ask_succeeds_on_a_fresh_call_after_a_prior_call_failed(): void
+    public function test_ask_retries_once_within_a_single_call_and_succeeds_after_a_transient_503(): void
     {
+        // 1 回の ask() 呼び出しの中で内部リトライし、2 回目の試行で成功することを検証する
+        // (呼出元をまたいだ「次の呼び出しは独立して成功しうる」ではなく、1 リクエストの中での
+        // 自動リトライが要件、要件確認済み)。
+        Http::fakeSequence()
+            ->push(['error' => 'server error'], 503)
+            ->push([
+                'candidates' => [['content' => ['parts' => [['text' => '再送後の回答です。']]]]],
+            ], 200);
+
+        $service = new GeminiChatService;
+        $result = $service->ask('system', [], '質問');
+
+        $this->assertSame('再送後の回答です。', $result['content']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_ask_does_not_retry_on_non_server_error_status(): void
+    {
+        // 4xx はリトライしても成功しないため、1 回で諦める(即座に例外を投げる)。
         Http::fake([
-            'generativelanguage.googleapis.com/*' => Http::sequence()
-                ->push(['error' => 'server error'], 500)
-                ->push([
-                    'candidates' => [['content' => ['parts' => [['text' => '再送後の回答です。']]]]],
-                ], 200),
+            'generativelanguage.googleapis.com/*' => Http::response(['error' => 'bad request'], 400),
         ]);
+
         $service = new GeminiChatService;
 
         try {
-            $service->ask('system', [], '1回目の質問');
+            $service->ask('system', [], '質問');
             $this->fail('GeminiChatException was not thrown.');
-        } catch (GeminiChatException) {
-            // 想定通りの失敗。Service 自体は失敗状態を保持しないため、次の呼び出しは独立して成功しうる。
+        } catch (GeminiChatException $e) {
+            $this->assertSame(400, $e->upstreamStatus());
         }
 
-        $result = $service->ask('system', [], '2回目の質問');
+        Http::assertSentCount(1);
+    }
 
-        $this->assertSame('再送後の回答です。', $result['content']);
+    public function test_ask_throws_after_exhausting_retries_on_persistent_server_error(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response(['error' => 'server error'], 503),
+        ]);
+
+        $service = new GeminiChatService;
+
+        try {
+            $service->ask('system', [], '質問');
+            $this->fail('GeminiChatException was not thrown.');
+        } catch (GeminiChatException $e) {
+            $this->assertSame(503, $e->upstreamStatus());
+        }
+
+        Http::assertSentCount(2);
     }
 }

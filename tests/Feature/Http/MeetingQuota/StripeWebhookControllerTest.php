@@ -141,8 +141,9 @@ class StripeWebhookControllerTest extends TestCase
         $this->assertDatabaseCount('meeting_quota_transactions', 0);
     }
 
-    public function test_refunded_event_reverts_quota_and_marks_payment_refunded(): void
+    public function test_refunded_event_is_ignored_and_does_not_change_payment_or_quota(): void
     {
+        // charge.refunded はスコープ外のため、他の想定外イベントと同じく無視される(要件確認済み)。
         $student = User::factory()->student()->create();
         $payment = Payment::factory()->completed()->create([
             'user_id' => $student->id,
@@ -165,42 +166,11 @@ class StripeWebhookControllerTest extends TestCase
 
         $this->postJson(route('webhooks.stripe'), [], ['Stripe-Signature' => 'sig'])->assertOk();
 
-        $this->assertSame(PaymentStatus::Refunded, $payment->fresh()->status);
-        $this->assertDatabaseHas('meeting_quota_transactions', [
+        $this->assertSame(PaymentStatus::Succeeded, $payment->fresh()->status);
+        $this->assertDatabaseMissing('meeting_quota_transactions', [
             'related_payment_id' => $payment->id,
             'type' => MeetingQuotaTransactionType::Refunded->value,
-            'amount' => -5,
         ]);
-    }
-
-    public function test_duplicate_refunded_events_do_not_double_revert_quota(): void
-    {
-        $student = User::factory()->student()->create();
-        $payment = Payment::factory()->completed()->create([
-            'user_id' => $student->id,
-            'stripe_checkout_session_id' => 'cs_test_webhook_5',
-            'stripe_payment_intent_id' => 'pi_test_webhook_5',
-            'quantity' => 5,
-        ]);
-
-        $event = $this->fakeEvent('charge.refunded', [
-            'id' => 'ch_test_webhook_5',
-            'payment_intent' => 'pi_test_webhook_5',
-        ]);
-
-        $mock = Mockery::mock(StripeCheckoutService::class);
-        $mock->shouldReceive('constructWebhookEvent')->twice()->andReturn($event);
-        $this->app->instance(StripeCheckoutService::class, $mock);
-
-        $this->postJson(route('webhooks.stripe'), [], ['Stripe-Signature' => 'sig'])->assertOk();
-        $this->postJson(route('webhooks.stripe'), [], ['Stripe-Signature' => 'sig'])->assertOk();
-
-        $this->assertSame(
-            1,
-            MeetingQuotaTransaction::where('related_payment_id', $payment->id)
-                ->where('type', MeetingQuotaTransactionType::Refunded->value)
-                ->count(),
-        );
     }
 
     public function test_invalid_signature_returns_400_and_does_not_require_authentication(): void

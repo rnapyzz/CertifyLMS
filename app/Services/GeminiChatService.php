@@ -25,10 +25,20 @@ use Throwable;
  *
  * `final` 不採用: 実際に外部 API 通信を行う Service のため、テストでは `Mockery::mock` で
  * 差し替える(`GoogleCalendarService` と同じ理由)。
+ *
+ * 一時的な障害(接続失敗 / 5xx)は `ask()` 内部で最大 {@see self::MAX_ATTEMPTS} 回まで自動リトライする
+ * (要件確認済み: 呼出元をまたいだ「次のリクエストは独立して成功しうる」ではなく、1 回の `ask()` 呼び出し
+ * 内で復旧できる必要がある)。4xx(認証エラー・不正リクエスト等)はリトライしても成功しないため対象外。
  */
 class GeminiChatService
 {
     private const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+    /** 初回 + リトライ 1 回の計 2 回まで試行する。 */
+    private const MAX_ATTEMPTS = 2;
+
+    /** リトライ前の待機時間(ミリ秒)。 */
+    private const RETRY_DELAY_MS = 300;
 
     /**
      * @param list<array{role: string, content: string}> $history 直近の会話履歴(user/model ロール、古い順)
@@ -60,20 +70,38 @@ class GeminiChatService
 
         $startedAt = microtime(true);
 
-        try {
-            // API キーはクエリパラメータではなく `X-Goog-Api-Key` ヘッダで渡す。接続失敗時の
-            // 例外メッセージには失敗した URL がそのまま含まれ report() 経由でログに残るため、
-            // クエリパラメータに載せるとログにキーが平文で漏れてしまう。
-            $response = Http::timeout((int) config('ai-chat.gemini.timeout', 20))
-                ->withHeaders(['X-Goog-Api-Key' => $apiKey])
-                ->post(self::API_BASE_URL."/{$model}:generateContent", [
-                    'systemInstruction' => [
-                        'parts' => [['text' => $systemPrompt]],
-                    ],
-                    'contents' => $contents,
-                ]);
-        } catch (ConnectionException $e) {
-            throw new GeminiChatException('Gemini API への接続に失敗しました。', previous: $e);
+        $response = null;
+        $connectionException = null;
+        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+            $connectionException = null;
+
+            try {
+                // API キーはクエリパラメータではなく `X-Goog-Api-Key` ヘッダで渡す。接続失敗時の
+                // 例外メッセージには失敗した URL がそのまま含まれ report() 経由でログに残るため、
+                // クエリパラメータに載せるとログにキーが平文で漏れてしまう。
+                $response = Http::timeout((int) config('ai-chat.gemini.timeout', 20))
+                    ->withHeaders(['X-Goog-Api-Key' => $apiKey])
+                    ->post(self::API_BASE_URL."/{$model}:generateContent", [
+                        'systemInstruction' => [
+                            'parts' => [['text' => $systemPrompt]],
+                        ],
+                        'contents' => $contents,
+                    ]);
+            } catch (ConnectionException $e) {
+                $connectionException = $e;
+            }
+
+            // 一時的な障害(接続失敗 or 5xx)以外は即座に諦める(4xx をリトライしても無駄なため)。
+            $isTransientFailure = $connectionException !== null || $response?->serverError() === true;
+            if (! $isTransientFailure || $attempt === self::MAX_ATTEMPTS) {
+                break;
+            }
+
+            usleep(self::RETRY_DELAY_MS * 1000);
+        }
+
+        if ($connectionException !== null) {
+            throw new GeminiChatException('Gemini API への接続に失敗しました。', previous: $connectionException);
         }
 
         $responseTimeMs = (int) round((microtime(true) - $startedAt) * 1000);

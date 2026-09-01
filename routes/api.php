@@ -21,9 +21,12 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 // ============================================================
-// TopBar 通知ポップオーバー向け JSON API(受講生 / コーチのみ、本人宛の通知のみ)
+// TopBar 通知ポップオーバー向け JSON API(認証済ユーザーの本人宛の通知のみ)
 // ============================================================
-Route::middleware(['auth:sanctum', 'role:student,coach'])->prefix('v1')->name('v1.')->group(function () {
+// 管理者はロールで弾かない(403 ではなく 200 + 0 件を返す)。管理者は既存の
+// NotificationEligibilityService により通知を一切受信しないため、$user->notifications() が
+// 常に空集合を返す結果として自然に「0 件」になる(要件確認済み)。
+Route::middleware(['auth:sanctum'])->prefix('v1')->name('v1.')->group(function () {
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead'])->name('notifications.readAll');
     Route::post('notifications/{notification}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');

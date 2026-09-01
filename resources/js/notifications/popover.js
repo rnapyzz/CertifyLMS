@@ -47,9 +47,7 @@ export function initNotificationPopover() {
 
     async function ensureCsrfCookie() {
         if (csrfReady) return;
-        // keepalive: ベル連打等でポップオーバーが閉じた直後にページ遷移が起きても、
-        // Cookie 取得自体は完了させる(既読化 POST の前提となるため)。
-        await fetch(CSRF_COOKIE_URL, { credentials: 'same-origin', keepalive: true });
+        await fetch(CSRF_COOKIE_URL, { credentials: 'same-origin' });
         csrfReady = true;
     }
 
@@ -158,25 +156,29 @@ export function initNotificationPopover() {
     }
 
     async function handleRowClick(notification) {
-        // 楽観的にローカル状態と未読数を先に反映してから遷移する(既読化 API 呼出の完了は待たない)。
+        // 既読化 API の完了(→ バッジ更新)を待ってから、ポップオーバーを閉じて遷移する
+        // (「同時にしたい」は 1 クリックで両方が完結してほしいという意味であり、並行実行の
+        // 指定ではない。fetch を待たずに window.location.href で遷移すると in-flight のリクエストが
+        // 中断されて既読化が失敗しうるため、必ず await してから遷移する)。
         if (notification.unread) {
-            notification.unread = false;
-            const current = notifications.filter((n) => n.unread).length;
-            updateUnreadCount(current);
+            try {
+                await ensureCsrfCookie();
+                const res = await fetch(`${API_BASE}/${notification.id}/read`, {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    credentials: 'same-origin',
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    notification.unread = false;
+                    updateUnreadCount(data.unread_count ?? notifications.filter((n) => n.unread).length);
+                }
+            } catch (e) {
+                // no-op: 既読化に失敗しても遷移自体は継続する(次回開いた時にサーバーの実状態で再同期される)
+            }
         }
 
-        // keepalive: この直後に window.location.href で遷移するため、fetch を待たずに
-        // 遷移してもリクエスト自体はブラウザがバックグラウンドで完了させる(keepalive なしだと
-        // 遷移でリクエストが中断され、既読化が反映されないまま「既読風」表示だけが残りうる)。
-        ensureCsrfCookie()
-            .then(() => fetch(`${API_BASE}/${notification.id}/read`, {
-                method: 'POST',
-                headers: apiHeaders(),
-                credentials: 'same-origin',
-                keepalive: true,
-            }))
-            .catch(() => {});
-
+        closePanel();
         window.location.href = notification.target_url;
     }
 
